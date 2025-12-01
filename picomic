@@ -32,11 +32,12 @@ try:
         num_read = audio_in.readinto(buf)
         
         # 2. 데이터가 읽혔다면 값 출력
+        # Pico 코드 수정 (while 루프 안쪽)
+
         if num_read > 0:
-            # 32비트 데이터의 앞부분(상위 비트)만 읽어서 숫자로 변환
-            # 소리를 지르면 이 숫자가 크게 변해야 함
             sample = int.from_bytes(buf[0:4], 'big', True)
-            print(f"값: {sample}")
+            # "값: " 글자 빼고 숫자만 보내야 파이썬이 그래프를 그립니다.
+            print(sample)
         else:
             print("데이터 없음")
             
