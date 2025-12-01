@@ -1,0 +1,27 @@
+from machine import I2S, Pin
+import utime
+
+# I2S 초기 설정
+i2s = I2S(
+    I2S.RX,
+    sck=Pin(18),
+    ws=Pin(19),
+    sd=Pin(20),
+    sample_rate=16000,
+    bits=24,
+    mode=I2S.MONO
+)
+
+buf = bytearray(1024)
+
+while True:
+    n = i2s.readinto(buf)
+    if n:
+        # 24비트 샘플 → 16비트로 다운컨버전
+        for i in range(0, n, 3):
+            raw = (buf[i] << 16) | (buf[i+1] << 8) | buf[i+2]
+            if raw & 0x800000:
+                raw -= 0x1000000
+            s16 = raw >> 8   # 24→16 비트 축소
+            print(s16)
+    utime.sleep_ms(1)
