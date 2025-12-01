@@ -1,48 +1,38 @@
+import sys
 from machine import I2S, Pin
-import time
 
-# === 핀 설정 (사용하신 핀 번호 그대로) ===
-# SCK (BCLK) : GP18
-# WS (LRCLK) : GP19
-# SD (DATA)  : GP20
+# === 핀 설정 ===
 bclk = Pin(18)
 lrclk = Pin(19)
 sd = Pin(20)
 
 # === I2S 초기화 ===
-# I2S 마이크 표준 설정 (INMP441 등 대부분 호환)
 audio_in = I2S(0,
                sck=bclk,
                ws=lrclk,
                sd=sd,
-               mode=I2S.RX,        # 수신(마이크) 모드
-               bits=32,            # 데이터 비트 (보통 32비트 슬롯 사용)
-               format=I2S.STEREO,  # 스테레오 모드
-               rate=16000,         # 샘플링 레이트
-               ibuf=4096)          # 버퍼 크기
+               mode=I2S.RX,
+               bits=32,
+               format=I2S.STEREO,
+               rate=16000,
+               ibuf=4096)
 
-# 데이터 읽을 공간
-buf = bytearray(1024)
-
-print("I2S 마이크 테스트 시작...")
+# 데이터를 담을 그릇 (4바이트 = 1개의 샘플 데이터)
+buf = bytearray(4)
 
 try:
     while True:
-        # 1. 버퍼 크기만큼 데이터 읽기
+        # 1. 마이크 데이터 읽기
         num_read = audio_in.readinto(buf)
         
-        # 2. 데이터가 읽혔다면 값 출력
-        # Pico 코드 수정 (while 루프 안쪽)
-
         if num_read > 0:
-            sample = int.from_bytes(buf[0:4], 'big', True)
-            # "값: " 글자 빼고 숫자만 보내야 파이썬이 그래프를 그립니다.
-            print(sample)
-        else:
-            print("데이터 없음")
+            # 2. [중요] 변환 없이 바이트 그대로 전송
+            # print()는 느려서 안 씁니다. sys.stdout.buffer.write가 가장 빠릅니다.
+            sys.stdout.buffer.write(buf)
             
-        time.sleep(0.05) # 너무 빠르면 보기 힘드니까 약간 딜레이
+        # 3. ANC용이므로 딜레이(sleep)를 제거했습니다.
+        # 만약 데이터가 너무 깨진다면 아주 짧게(0.0001) 넣으세요.
+        # time.sleep(0.0001)
 
 except KeyboardInterrupt:
     audio_in.deinit()
-    print("종료")
