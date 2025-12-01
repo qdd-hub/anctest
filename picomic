@@ -1,47 +1,51 @@
-import rp2
-from machine import Pin
-import utime
+from machine import I2S, Pin
+import time
 
-# 핀 설정
-BCLK = Pin(18, Pin.OUT)
-LRCLK = Pin(19, Pin.OUT)
-DATA = Pin(20, Pin.IN)
+# === 핀 설정 ===
+# SCK (Serial Clock) = BCLK : 18번
+# WS (Word Select)   = LRCLK : 19번
+# SD (Serial Data)   = DATA  : 20번
 
-# ======== PIO: I2S Clock 생성 (BCLK + LRCLK) ========
-@rp2.asm_pio(out_init=(rp2.PIO.OUT_LOW, rp2.PIO.OUT_LOW),
-             out_shiftdir=rp2.PIO.SHIFT_LEFT,
-             autopush=False)
-def i2s_clk():
-    wrap_target()
-    set(pins, 1)   [0]   # BCLK HIGH
-    nop()         [0]
-    set(pins, 0)   [0]   # BCLK LOW
-    nop()         [0]
-    wrap()
+sc_pin = Pin(18)
+ws_pin = Pin(19)
+sd_pin = Pin(20)
 
-sm_clk = rp2.StateMachine(0, i2s_clk, freq=2_000_000, out_base=BCLK)
-sm_clk.active(1)
+# === I2S 설정 ===
+# I2S ID: 0 또는 1 (Pico는 2개의 I2S 하드웨어 블록을 가짐)
+audio_in = I2S(0,
+               sck=sc_pin,
+               ws=ws_pin,
+               sd=sd_pin,
+               mode=I2S.RX,       # 수신 모드 (마이크)
+               bits=32,           # INMP441 등 대부분의 I2S 마이크는 32비트 슬롯 사용 (데이터는 24비트일 수 있음)
+               format=I2S.STEREO, # 보통 STEREO로 설정 후 한쪽 채널만 씁니다
+               rate=16000,        # 샘플링 레이트 (16kHz)
+               ibuf=2048)         # 내부 버퍼 크기
 
-# ======== PIO: I2S 데이터 읽기 ========
-@rp2.asm_pio(in_shiftdir=rp2.PIO.SHIFT_LEFT, autopush=True, push_thresh=32)
-def i2s_rx():
-    wait(0, pin, 0)
-    wait(1, pin, 0)
-    set(x, 31)
-    label("bitloop")
-    in_(pins, 1)
-    jmp(x_dec, "bitloop")
+# 데이터를 읽어올 버퍼 생성 (bytearray)
+read_buffer = bytearray(1024) 
 
-sm_rx = rp2.StateMachine(1, i2s_rx, freq=2_000_000, in_base=DATA, jmp_pin=LRCLK)
-sm_rx.active(1)
+print("I2S Ready... (Speaking into mic)")
 
-print("I2S Ready...")
+try:
+    while True:
+        # 버퍼 크기만큼 데이터 읽기
+        num_read = audio_in.readinto(read_buffer)
+        
+        if num_read > 0:
+            # 예시: 버퍼의 첫 번째 샘플값만 찍어보기 (제대로 들어오는지 확인용)
+            # 32비트 데이터이므로 4바이트씩 묶어서 해석해야 함
+            
+            # 간단히 보기 위해 raw 바이트 일부 출력
+            # 소리가 입력되면 이 숫자들이 막 변해야 함
+            sample_val = int.from_bytes(read_buffer[0:4], 'big') 
+            print(f"Read: {num_read} bytes, Sample: {sample_val}")
+            
+        else:
+            print("No data")
+            
+        time.sleep(0.01) # 너무 빠른 출력 방지
 
-while True:
-    if sm_rx.rx_fifo():
-        raw = sm_rx.get()
-        sample = raw >> 8
-        if sample & 0x8000:
-            sample -= 0x10000
-        print(sample)
-    utime.sleep_us(100)
+except KeyboardInterrupt:
+    audio_in.deinit()
+    print("\nI2S Stopped")
