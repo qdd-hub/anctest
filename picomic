@@ -1,51 +1,47 @@
 from machine import I2S, Pin
 import time
 
-# === 핀 설정 ===
-# SCK (Serial Clock) = BCLK : 18번
-# WS (Word Select)   = LRCLK : 19번
-# SD (Serial Data)   = DATA  : 20번
+# === 핀 설정 (사용하신 핀 번호 그대로) ===
+# SCK (BCLK) : GP18
+# WS (LRCLK) : GP19
+# SD (DATA)  : GP20
+bclk = Pin(18)
+lrclk = Pin(19)
+sd = Pin(20)
 
-sc_pin = Pin(18)
-ws_pin = Pin(19)
-sd_pin = Pin(20)
-
-# === I2S 설정 ===
-# I2S ID: 0 또는 1 (Pico는 2개의 I2S 하드웨어 블록을 가짐)
+# === I2S 초기화 ===
+# I2S 마이크 표준 설정 (INMP441 등 대부분 호환)
 audio_in = I2S(0,
-               sck=sc_pin,
-               ws=ws_pin,
-               sd=sd_pin,
-               mode=I2S.RX,       # 수신 모드 (마이크)
-               bits=32,           # INMP441 등 대부분의 I2S 마이크는 32비트 슬롯 사용 (데이터는 24비트일 수 있음)
-               format=I2S.STEREO, # 보통 STEREO로 설정 후 한쪽 채널만 씁니다
-               rate=16000,        # 샘플링 레이트 (16kHz)
-               ibuf=2048)         # 내부 버퍼 크기
+               sck=bclk,
+               ws=lrclk,
+               sd=sd,
+               mode=I2S.RX,        # 수신(마이크) 모드
+               bits=32,            # 데이터 비트 (보통 32비트 슬롯 사용)
+               format=I2S.STEREO,  # 스테레오 모드
+               rate=16000,         # 샘플링 레이트
+               ibuf=4096)          # 버퍼 크기
 
-# 데이터를 읽어올 버퍼 생성 (bytearray)
-read_buffer = bytearray(1024) 
+# 데이터 읽을 공간
+buf = bytearray(1024)
 
-print("I2S Ready... (Speaking into mic)")
+print("I2S 마이크 테스트 시작...")
 
 try:
     while True:
-        # 버퍼 크기만큼 데이터 읽기
-        num_read = audio_in.readinto(read_buffer)
+        # 1. 버퍼 크기만큼 데이터 읽기
+        num_read = audio_in.readinto(buf)
         
+        # 2. 데이터가 읽혔다면 값 출력
         if num_read > 0:
-            # 예시: 버퍼의 첫 번째 샘플값만 찍어보기 (제대로 들어오는지 확인용)
-            # 32비트 데이터이므로 4바이트씩 묶어서 해석해야 함
-            
-            # 간단히 보기 위해 raw 바이트 일부 출력
-            # 소리가 입력되면 이 숫자들이 막 변해야 함
-            sample_val = int.from_bytes(read_buffer[0:4], 'big') 
-            print(f"Read: {num_read} bytes, Sample: {sample_val}")
-            
+            # 32비트 데이터의 앞부분(상위 비트)만 읽어서 숫자로 변환
+            # 소리를 지르면 이 숫자가 크게 변해야 함
+            sample = int.from_bytes(buf[0:4], 'big', True)
+            print(f"값: {sample}")
         else:
-            print("No data")
+            print("데이터 없음")
             
-        time.sleep(0.01) # 너무 빠른 출력 방지
+        time.sleep(0.05) # 너무 빠르면 보기 힘드니까 약간 딜레이
 
 except KeyboardInterrupt:
     audio_in.deinit()
-    print("\nI2S Stopped")
+    print("종료")
