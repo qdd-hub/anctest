@@ -1,0 +1,43 @@
+from machine import I2S, Pin
+import time
+
+# === 핀 설정 (INMP441) ===
+bclk = Pin(18)
+lrclk = Pin(19)
+sd = Pin(20)
+
+# === I2S 마이크 설정 ===
+audio_in = I2S(0,
+               sck=bclk,
+               ws=lrclk,
+               sd=sd,
+               mode=I2S.RX,
+               bits=32,
+               format=I2S.STEREO,
+               rate=16000,
+               ibuf=4096)
+
+buf = bytearray(4)
+
+print("마이크 테스트 시작... (Thonny 플로터를 켜세요)")
+
+try:
+    while True:
+        # 1. 데이터 읽기
+        num_read = audio_in.readinto(buf)
+        
+        if num_read > 0:
+            # 2. 데이터 변환 (Little Endian + Shift)
+            # 이 과정이 없으면 20억 같은 이상한 숫자가 나옵니다.
+            raw_val = int.from_bytes(buf, 'little', signed=True)
+            sample = raw_val >> 14
+            
+            # 3. 값 출력 (Thonny가 이 숫자를 그래프로 그려줍니다)
+            print(sample)
+            
+        # 너무 빠르면 Thonny 그래프가 못 따라가서 살짝 늦춤
+        time.sleep(0.001)
+
+except KeyboardInterrupt:
+    audio_in.deinit()
+    print("종료")
