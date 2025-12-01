@@ -1,0 +1,31 @@
+import serial
+import matplotlib.pyplot as plt
+import numpy as np
+from collections import deque
+
+# 피코 연결된 포트 확인 후 수정
+ser = serial.Serial('/dev/ttyACM0', 115200)
+
+# 파형 버퍼(최근 N개)
+BUF = deque(maxlen=1000)
+
+plt.ion()
+fig, ax = plt.subplots()
+line, = ax.plot([], [])
+
+while True:
+    try:
+        raw = ser.readline().decode().strip()
+        if raw == '':
+            continue
+        value = int(raw)
+        BUF.append(value)
+
+        line.set_xdata(np.arange(len(BUF)))
+        line.set_ydata(list(BUF))
+        ax.relim()
+        ax.autoscale_view()
+        plt.pause(0.001)
+
+    except KeyboardInterrupt:
+        break
