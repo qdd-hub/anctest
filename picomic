@@ -1,44 +1,46 @@
-# PIO I2S RX - INMP441 I2S 마이크 입력용
-# MicroPython 기본 펌웨어에서 동작함
-
 import rp2
 from machine import Pin
 import utime
-import struct
 
 # 핀 설정
-BCLK = 18     # SCK
-LRCLK = 19    # WS
-DATA = 20     # SD(DOUT)
+BCLK = Pin(18, Pin.OUT)
+LRCLK = Pin(19, Pin.OUT)
+DATA = Pin(20, Pin.IN)
 
-# ======== I2S PIO 프로그램 (마이크 데이터 수신) ========
+# ======== PIO: I2S Clock 생성 (BCLK + LRCLK) ========
+@rp2.asm_pio(out_init=(rp2.PIO.OUT_LOW, rp2.PIO.OUT_LOW),
+             out_shiftdir=rp2.PIO.SHIFT_LEFT,
+             autopush=False)
+def i2s_clk():
+    wrap_target()
+    set(pins, 1)   [0]   # BCLK HIGH
+    nop()         [0]
+    set(pins, 0)   [0]   # BCLK LOW
+    nop()         [0]
+    wrap()
+
+sm_clk = rp2.StateMachine(0, i2s_clk, freq=2_000_000, out_base=BCLK)
+sm_clk.active(1)
+
+# ======== PIO: I2S 데이터 읽기 ========
 @rp2.asm_pio(in_shiftdir=rp2.PIO.SHIFT_LEFT, autopush=True, push_thresh=32)
-def i2s_input():
-    # WS(LRCLK) 신호를 기준으로 32비트(24비트 데이터)를 읽는 PIO
-    wait(0, pin, 0)        # LRCLK LOW 대기
-    wait(1, pin, 0)        # LRCLK HIGH 대기
-    set(x, 31)             # 32비트 읽기
+def i2s_rx():
+    wait(0, pin, 0)
+    wait(1, pin, 0)
+    set(x, 31)
     label("bitloop")
-    in_(pins, 1)           # DATA 한 비트 시프트
-    jmp(x_dec, "bitloop")  # 32번 반복
+    in_(pins, 1)
+    jmp(x_dec, "bitloop")
 
-# PIO 상태 머신 생성
-sm = rp2.StateMachine(
-    0,
-    i2s_input,
-    freq=2_000_000,
-    in_base=Pin(DATA),
-    jmp_pin=Pin(LRCLK)
-)
+sm_rx = rp2.StateMachine(1, i2s_rx, freq=2_000_000, in_base=DATA, jmp_pin=LRCLK)
+sm_rx.active(1)
 
-sm.active(1)
-
-print("I2S PIO Started...")
+print("I2S Ready...")
 
 while True:
-    if sm.rx_fifo():
-        raw = sm.get()         # 32bit
-        sample = raw >> 8      # 24bit → 16bit 축소
+    if sm_rx.rx_fifo():
+        raw = sm_rx.get()
+        sample = raw >> 8
         if sample & 0x8000:
             sample -= 0x10000
         print(sample)
