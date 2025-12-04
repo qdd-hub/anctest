@@ -1,0 +1,71 @@
+# pip install pyserial sounddevice numpy
+# [노트북 코드: Laptop_PassThrough.py]
+import serial
+import sounddevice as sd
+import numpy as np
+import struct
+
+# --- 설정 ---
+COM_PORT = 'COM5'      # <--- 장치 관리자 보고 본인 포트로 수정 필수!
+BAUD_RATE = 115200     # 피코 USB 통신 속도 (사실 USB라 더 빨라도 됨)
+FS = 16000             # 샘플링 레이트 (시리얼 통신 한계로 44100은 끊길 수 있음)
+BLOCK_SIZE = 512       # 한 번에 처리할 데이터 덩어리 크기
+GAIN = 5.0             # 소리 증폭 배율
+
+# --- 시리얼 포트 열기 ---
+try:
+    ser = serial.Serial(COM_PORT, BAUD_RATE)
+    print(f"✅ {COM_PORT} 연결 성공! 마이크 소리를 진동자로 보냅니다...")
+except Exception as e:
+    print(f"❌ 포트 연결 실패: {e}")
+    exit()
+
+# --- 오디오 콜백 함수 (소리 재생용) ---
+def audio_callback(outdata, frames, time, status):
+    if status:
+        print(status)
+    
+    # 1. 시리얼에서 데이터 읽어오기 (필요한 바이트 수: 프레임 * 2바이트)
+    # 피코가 2바이트씩 보내므로 frame * 2 만큼 읽어야 함
+    if ser.in_waiting >= frames * 2:
+        raw_data = ser.read(frames * 2)
+        
+        # 2. 바이트 -> 정수(0~65535)로 변환
+        # '>H'는 Big-Endian Unsigned Short (피코 코드랑 맞춤)
+        # count는 데이터 개수
+        count = len(raw_data) // 2
+        ints = struct.unpack(f'>{count}H', raw_data)
+        
+        # 3. 정규화 (0~65535 -> -1.0 ~ 1.0) 및 증폭
+        # 32768이 중간값(0V)이라고 가정
+        normalized = [(x - 32768) / 32768.0 * GAIN for x in ints]
+        
+        # 4. 길이가 안 맞으면 0으로 채우거나 자름 (안전장치)
+        if len(normalized) < frames:
+            normalized += [0.0] * (frames - len(normalized))
+        else:
+            normalized = normalized[:frames]
+            
+        # 5. 스테레오로 변환 (왼쪽/오른쪽 똑같이)해서 출력 버퍼에 담기
+        # outdata는 (frames, 2) 모양이어야 함
+        outdata[:] = np.column_stack((normalized, normalized))
+        
+    else:
+        # 데이터가 아직 안 왔으면 침묵(0) 출력
+        outdata.fill(0)
+
+# --- 재생 시작 ---
+try:
+    # 스트림 열기 (OutputStream)
+    with sd.OutputStream(channels=2, samplerate=FS, blocksize=BLOCK_SIZE, callback=audio_callback):
+        print("🎤 재생 중... (Ctrl+C로 종료)")
+        print("마이크에 소리를 내보세요!")
+        while True:
+            sd.sleep(1000)
+
+except KeyboardInterrupt:
+    print("\n종료합니다.")
+    ser.close()
+except Exception as e:
+    print(f"\n에러 발생: {e}")
+    ser.close()
